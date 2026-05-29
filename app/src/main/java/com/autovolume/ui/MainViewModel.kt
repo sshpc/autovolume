@@ -1,14 +1,24 @@
 package com.autovolume.ui
 
 import android.app.Application
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.autovolume.datastore.SettingsDataStore
 import com.autovolume.headset.HeadsetDetector
 import com.autovolume.model.AppSettings
 import com.autovolume.model.RunMode
+import com.autovolume.model.ThemeMode
 import com.autovolume.model.VolumeAdjustmentEvent
+import com.autovolume.model.VolumeProfile
 import com.autovolume.service.AutoVolumeService
+import com.autovolume.util.PermissionHelper
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -16,15 +26,6 @@ import kotlinx.coroutines.launch
  * 主 ViewModel
  *
  * 管理整个应用的 UI 状态。
- *
- * 架构：
- * - settingsFlow → 设置状态（来自 DataStore）
- * - isServiceRunning → 服务运行状态（来自 Service companion object）
- * - currentDb / currentVolume / rawMappedVolume → 实时数据（来自 Service companion object）
- * - headsetConnected / headsetType → 耳机状态（来自 Service companion object）
- * - 各种 update 方法 → 修改设置
- *
- * 数据流向：Service companion object StateFlow → ViewModel → UI
  */
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -35,37 +36,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val settings: StateFlow<AppSettings> = settingsDataStore.settingsFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AppSettings())
 
-    // ==================== 服务状态（来自 Service companion object）====================
+    // ==================== 服务状态 ====================
 
-    /** 服务是否正在运行 */
     val isServiceRunning: StateFlow<Boolean> = AutoVolumeService.isRunning
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
-    // ==================== 实时数据（来自 Service companion object）====================
+    // ==================== 实时数据 ====================
 
-    /** 当前环境 dB */
     val currentDb: StateFlow<Float> = AutoVolumeService.currentDb
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
 
-    /** 当前媒体音量百分比 */
     val currentVolume: StateFlow<Int> = AutoVolumeService.currentVolume
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
-    /** 映射后的目标音量（未限制） */
     val rawMappedVolume: StateFlow<Int> = AutoVolumeService.rawMappedVolume
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
-    /** 音量调节历史 */
     val adjustmentHistory: StateFlow<List<VolumeAdjustmentEvent>> = AutoVolumeService.adjustmentHistory
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // ==================== 耳机状态（来自 Service companion object）====================
+    // ==================== 耳机状态 ====================
 
-    /** 耳机是否连接 */
     val headsetConnected: StateFlow<Boolean> = AutoVolumeService.headsetConnected
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
-    /** 耳机类型 */
     val headsetType: StateFlow<HeadsetDetector.HeadsetType> = AutoVolumeService.headsetType
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), HeadsetDetector.HeadsetType.NONE)
 
@@ -76,6 +70,81 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _manufacturerWarning = MutableStateFlow<String?>(null)
     val manufacturerWarning: StateFlow<String?> = _manufacturerWarning.asStateFlow()
+
+    // ==================== 后台运行提示 ====================
+
+    val backgroundTipShown: StateFlow<Boolean> = settingsDataStore.backgroundTipShownFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    // ==================== 主题模式 ====================
+
+    val themeMode: StateFlow<ThemeMode> = settingsDataStore.themeModeFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemeMode.SYSTEM)
+
+    // ==================== 配置管理 ====================
+
+    val profileNames: StateFlow<List<String>> = settingsDataStore.profileNamesFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val currentProfileName: StateFlow<String> = settingsDataStore.currentProfileFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "默认")
+
+    // ==================== 权限检测 ====================
+
+    /** 获取当前缺失的权限列表 */
+    fun getMissingPermissions(): List<PermissionItem> {
+        val context = getApplication<Application>()
+        val missing = mutableListOf<PermissionItem>()
+
+        // 麦克风权限
+        if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED) {
+            missing.add(PermissionItem(
+                name = "麦克风权限",
+                description = "点击授权以启用自动音量调节",
+                permission = android.Manifest.permission.RECORD_AUDIO
+            ))
+        }
+
+        // 通知权限 (Android 13+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+                missing.add(PermissionItem(
+                    name = "通知权限",
+                    description = "点击授权以显示运行状态通知",
+                    permission = android.Manifest.permission.POST_NOTIFICATIONS
+                ))
+            }
+        }
+
+        // 后台运行权限
+        if (!PermissionHelper.isIgnoringBatteryOptimizations(context)) {
+            missing.add(PermissionItem(
+                name = "后台运行权限",
+                description = "点击设置以允许后台运行",
+                permission = "battery_optimization"
+            ))
+        }
+
+        return missing
+    }
+
+    /** 打开应用系统设置页面 */
+    fun openAppSettings() {
+        val context = getApplication<Application>()
+        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.fromParts("package", context.packageName, null)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        context.startActivity(intent)
+    }
+
+    /** 打开电池优化设置 */
+    fun openBatteryOptimization() {
+        val context = getApplication<Application>()
+        PermissionHelper.requestIgnoreBatteryOptimizations(context)
+    }
 
     // ==================== 服务控制 ====================
 
@@ -180,7 +249,45 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun checkManufacturerWarning() {
-        _manufacturerWarning.value =
-            com.autovolume.util.PermissionHelper.getManufacturerWarning()
+        _manufacturerWarning.value = PermissionHelper.getManufacturerWarning()
+    }
+
+    // ==================== 后台运行提示 ====================
+
+    fun markBackgroundTipShown() {
+        viewModelScope.launch { settingsDataStore.updateBackgroundTipShown(true) }
+    }
+
+    // ==================== 主题 ====================
+
+    fun updateThemeMode(mode: ThemeMode) {
+        viewModelScope.launch { settingsDataStore.updateThemeMode(mode) }
+    }
+
+    // ==================== 配置管理 ====================
+
+    fun createProfile(name: String) {
+        viewModelScope.launch { settingsDataStore.createProfile(name) }
+    }
+
+    fun deleteProfile(name: String) {
+        viewModelScope.launch { settingsDataStore.deleteProfile(name) }
+    }
+
+    fun renameProfile(oldName: String, newName: String) {
+        viewModelScope.launch { settingsDataStore.renameProfile(oldName, newName) }
+    }
+
+    fun switchProfile(name: String) {
+        viewModelScope.launch { settingsDataStore.switchProfile(name) }
     }
 }
+
+/**
+ * 权限信息数据类
+ */
+data class PermissionItem(
+    val name: String,
+    val description: String,
+    val permission: String
+)

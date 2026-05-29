@@ -1,6 +1,94 @@
 package com.autovolume.model
 
 /**
+ * 主题模式枚举
+ */
+enum class ThemeMode(val displayName: String) {
+    LIGHT("浅色模式"),
+    DARK("深色模式"),
+    SYSTEM("跟随系统");
+
+    companion object {
+        fun fromString(value: String): ThemeMode =
+            entries.find { it.name == value } ?: SYSTEM
+    }
+}
+
+/**
+ * 音量配置方案
+ *
+ * 每个配置独立保存灵敏度、音量范围、映射曲线、响应速度等参数。
+ */
+data class VolumeProfile(
+    val name: String = "",
+    val minVolumePercent: Int = 10,
+    val maxVolumePercent: Int = 90,
+    val noiseMappingLow: Int = 30,
+    val volumeMappingLow: Int = 20,
+    val noiseMappingMid: Int = 50,
+    val volumeMappingMid: Int = 40,
+    val noiseMappingHigh: Int = 70,
+    val volumeMappingHigh: Int = 70,
+    val noiseMappingMax: Int = 90,
+    val volumeMappingMax: Int = 100,
+    val smoothingFactor: Float = 0.3f,
+    val noiseThreshold: Int = 5,
+    val maxVolumeStep: Int = 5,
+    val cooldownMs: Long = 2000L,
+    val maxAdjustmentsPerSecond: Int = 3
+) {
+    fun encodeToString(): String {
+        return listOf(
+            name,
+            minVolumePercent.toString(),
+            maxVolumePercent.toString(),
+            noiseMappingLow.toString(),
+            volumeMappingLow.toString(),
+            noiseMappingMid.toString(),
+            volumeMappingMid.toString(),
+            noiseMappingHigh.toString(),
+            volumeMappingHigh.toString(),
+            noiseMappingMax.toString(),
+            volumeMappingMax.toString(),
+            smoothingFactor.toString(),
+            noiseThreshold.toString(),
+            maxVolumeStep.toString(),
+            cooldownMs.toString(),
+            maxAdjustmentsPerSecond.toString()
+        ).joinToString("|")
+    }
+
+    companion object {
+        fun decodeFromString(encoded: String): VolumeProfile? {
+            return try {
+                val parts = encoded.split("|")
+                if (parts.size < 16) return null
+                VolumeProfile(
+                    name = parts[0],
+                    minVolumePercent = parts[1].toInt(),
+                    maxVolumePercent = parts[2].toInt(),
+                    noiseMappingLow = parts[3].toInt(),
+                    volumeMappingLow = parts[4].toInt(),
+                    noiseMappingMid = parts[5].toInt(),
+                    volumeMappingMid = parts[6].toInt(),
+                    noiseMappingHigh = parts[7].toInt(),
+                    volumeMappingHigh = parts[8].toInt(),
+                    noiseMappingMax = parts[9].toInt(),
+                    volumeMappingMax = parts[10].toInt(),
+                    smoothingFactor = parts[11].toFloat(),
+                    noiseThreshold = parts[12].toInt(),
+                    maxVolumeStep = parts[13].toInt(),
+                    cooldownMs = parts[14].toLong(),
+                    maxAdjustmentsPerSecond = parts[15].toInt()
+                )
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+}
+
+/**
  * 运行模式枚举
  *
  * 定义了四种运行模式，每种模式对应不同的功耗和响应速度：
@@ -119,7 +207,11 @@ data class AppSettings(
 
     // ==================== 调试 ====================
     /** 是否显示实时调试信息 */
-    val showDebugInfo: Boolean = false
+    val showDebugInfo: Boolean = false,
+
+    // ==================== 主题 ====================
+    /** 主题模式 */
+    val themeMode: ThemeMode = ThemeMode.SYSTEM
 ) {
     companion object {
         /**

@@ -1,7 +1,6 @@
 package com.autovolume.util
 
 import android.Manifest
-import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -9,7 +8,6 @@ import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 
 /**
@@ -27,9 +25,6 @@ object PermissionHelper {
             add(Manifest.permission.POST_NOTIFICATIONS)
         }
     }.toTypedArray()
-
-    /** 权限请求码 */
-    const val REQUEST_CODE_PERMISSIONS = 1001
 
     /**
      * 检查是否所有必要权限都已授予
@@ -50,13 +45,6 @@ object PermissionHelper {
     }
 
     /**
-     * 请求权限
-     */
-    fun requestPermissions(activity: Activity) {
-        ActivityCompat.requestPermissions(activity, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS)
-    }
-
-    /**
      * 检查是否在电池优化白名单中
      */
     fun isIgnoringBatteryOptimizations(context: Context): Boolean {
@@ -70,17 +58,19 @@ object PermissionHelper {
      * 引导用户关闭电池优化，确保后台服务不被杀死。
      * 这对国产手机尤为重要。
      */
-    fun requestIgnoreBatteryOptimizations(activity: Activity) {
+    fun requestIgnoreBatteryOptimizations(context: Context) {
         try {
             val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                data = Uri.parse("package:${activity.packageName}")
+                data = Uri.parse("package:${context.packageName}")
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
-            activity.startActivity(intent)
+            context.startActivity(intent)
         } catch (e: Exception) {
-            // 部分设备可能不支持，降级到电池优化设置页面
             try {
-                val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                activity.startActivity(intent)
+                val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                context.startActivity(intent)
             } catch (e2: Exception) {
                 // 完全不支持，忽略
             }

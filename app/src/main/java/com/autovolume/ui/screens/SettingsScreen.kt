@@ -1,18 +1,28 @@
 package com.autovolume.ui.screens
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.autovolume.model.AppSettings
+import com.autovolume.model.ThemeMode
+import com.autovolume.ui.components.BugReport
+import com.autovolume.ui.components.Code
+import com.autovolume.ui.components.MusicNote
 
 /**
  * 设置页面 - 所有可调节参数
@@ -21,6 +31,7 @@ import com.autovolume.model.AppSettings
 @Composable
 fun SettingsScreen(
     settings: AppSettings,
+    themeMode: ThemeMode,
     onBack: () -> Unit,
     onDetectionIntervalChange: (Long) -> Unit,
     onSmoothingFactorChange: (Float) -> Unit,
@@ -35,8 +46,12 @@ fun SettingsScreen(
     onScreenOffMultiplierChange: (Int) -> Unit,
     onAdaptiveSamplingChange: (Boolean) -> Unit,
     onNoiseMappingChange: (Int, Int, Int, Int, Int, Int, Int, Int) -> Unit,
-    onResetDefaults: () -> Unit
+    onResetDefaults: () -> Unit,
+    onThemeModeChange: (ThemeMode) -> Unit,
+    onNavigateToAdvanced: () -> Unit
 ) {
+    val context = LocalContext.current
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -56,6 +71,30 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
+            // ===== 外观设置 =====
+            SectionTitle("外观设置")
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("主题模式", fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(bottom = 8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        ThemeMode.entries.forEach { mode ->
+                            FilterChip(
+                                selected = themeMode == mode,
+                                onClick = { onThemeModeChange(mode) },
+                                label = { Text(mode.displayName, fontSize = 12.sp) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
             // ===== 检测参数 =====
             SectionTitle("检测参数")
             SettingSlider("检测间隔", settings.detectionIntervalMs.toFloat(),
@@ -126,6 +165,19 @@ fun SettingsScreen(
             }
             SwitchSetting("动态自适应采样", "环境稳定时自动降低频率", settings.adaptiveSampling, onAdaptiveSamplingChange)
 
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
+            // ===== 高级与调试 =====
+            SectionTitle("高级与调试")
+            OutlinedButton(
+                onClick = onNavigateToAdvanced,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.BugReport, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("高级与调试")
+            }
+
             Spacer(modifier = Modifier.height(24.dp))
 
             // ===== 重置 =====
@@ -136,7 +188,103 @@ fun SettingsScreen(
                 Text("重置为默认设置")
             }
 
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // ===== 关于软件 =====
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+            AboutCard(context)
+
             Spacer(modifier = Modifier.height(32.dp))
+        }
+    }
+}
+
+// ==================== 关于软件卡片 ====================
+
+@Composable
+private fun AboutCard(context: Context) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // APP 图标
+            Icon(
+                imageVector = Icons.Default.MusicNote,
+                contentDescription = null,
+                modifier = Modifier.size(48.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+            Spacer(Modifier.height(12.dp))
+
+            // APP 名称
+            Text(
+                "AutoVolume",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(4.dp))
+
+            // 版本
+            Text(
+                "v1.0.0",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(12.dp))
+
+            // 作者
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.Person,
+                    null,
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    "作者：sshpc",
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+
+            // GitHub 链接
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.Code,
+                    null,
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.width(6.dp))
+                TextButton(
+                    onClick = {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/sshpc/autovolume"))
+                        context.startActivity(intent)
+                    },
+                    contentPadding = PaddingValues(0.dp)
+                ) {
+                    Text(
+                        "https://github.com/sshpc/autovolume",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.primary,
+                        textDecoration = TextDecoration.Underline
+                    )
+                }
+            }
         }
     }
 }

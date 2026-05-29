@@ -6,7 +6,10 @@ import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import com.autovolume.model.AppSettings
 import com.autovolume.model.RunMode
+import com.autovolume.model.ThemeMode
+import com.autovolume.model.VolumeProfile
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 /**
@@ -83,6 +86,16 @@ class SettingsDataStore(private val context: Context) {
 
         // 运行状态（非设置，用于跨进程状态恢复）
         val SERVICE_WAS_RUNNING = booleanPreferencesKey("service_was_running")
+
+        // 后台运行提示已展示
+        val BACKGROUND_TIP_SHOWN = booleanPreferencesKey("background_tip_shown")
+
+        // 主题模式
+        val THEME_MODE = stringPreferencesKey("theme_mode")
+
+        // 配置管理
+        val PROFILE_NAMES = stringPreferencesKey("profile_names")
+        val CURRENT_PROFILE = stringPreferencesKey("current_profile")
     }
 
     /**
@@ -126,7 +139,9 @@ class SettingsDataStore(private val context: Context) {
             screenOffIntervalMultiplier = prefs[Keys.SCREEN_OFF_MULTIPLIER] ?: 5,
             adaptiveSampling = prefs[Keys.ADAPTIVE_SAMPLING] ?: true,
 
-            showDebugInfo = prefs[Keys.SHOW_DEBUG_INFO] ?: false
+            showDebugInfo = prefs[Keys.SHOW_DEBUG_INFO] ?: false,
+
+            themeMode = ThemeMode.fromString(prefs[Keys.THEME_MODE] ?: ThemeMode.SYSTEM.name)
         )
     }
 
@@ -250,5 +265,161 @@ class SettingsDataStore(private val context: Context) {
     /** 重置所有设置为默认值 */
     suspend fun resetToDefaults() {
         context.dataStore.edit { it.clear() }
+    }
+
+    // ==================== 后台运行提示 ====================
+
+    val backgroundTipShownFlow: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[Keys.BACKGROUND_TIP_SHOWN] ?: false
+    }
+
+    suspend fun updateBackgroundTipShown(shown: Boolean) {
+        context.dataStore.edit { it[Keys.BACKGROUND_TIP_SHOWN] = shown }
+    }
+
+    // ==================== 主题模式 ====================
+
+    val themeModeFlow: Flow<ThemeMode> = context.dataStore.data.map { prefs ->
+        ThemeMode.fromString(prefs[Keys.THEME_MODE] ?: ThemeMode.SYSTEM.name)
+    }
+
+    suspend fun updateThemeMode(mode: ThemeMode) {
+        context.dataStore.edit { it[Keys.THEME_MODE] = mode.name }
+    }
+
+    // ==================== 配置管理 ====================
+
+    /** 获取所有配置名称列表 */
+    val profileNamesFlow: Flow<List<String>> = context.dataStore.data.map { prefs ->
+        val names = prefs[Keys.PROFILE_NAMES] ?: ""
+        if (names.isBlank()) emptyList() else names.split(",").filter { it.isNotBlank() }
+    }
+
+    /** 获取当前配置名称 */
+    val currentProfileFlow: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[Keys.CURRENT_PROFILE] ?: "默认"
+    }
+
+    /** 根据名称获取配置 */
+    suspend fun getProfileByName(name: String): VolumeProfile? {
+        if (name == "默认") {
+            val prefs = context.dataStore.data.first()
+            return VolumeProfile(
+                name = "默认",
+                minVolumePercent = prefs[Keys.MIN_VOLUME_PERCENT] ?: 10,
+                maxVolumePercent = prefs[Keys.MAX_VOLUME_PERCENT] ?: 90,
+                noiseMappingLow = prefs[Keys.NOISE_MAPPING_LOW] ?: 30,
+                volumeMappingLow = prefs[Keys.VOLUME_MAPPING_LOW] ?: 20,
+                noiseMappingMid = prefs[Keys.NOISE_MAPPING_MID] ?: 50,
+                volumeMappingMid = prefs[Keys.VOLUME_MAPPING_MID] ?: 40,
+                noiseMappingHigh = prefs[Keys.NOISE_MAPPING_HIGH] ?: 70,
+                volumeMappingHigh = prefs[Keys.VOLUME_MAPPING_HIGH] ?: 70,
+                noiseMappingMax = prefs[Keys.NOISE_MAPPING_MAX] ?: 90,
+                volumeMappingMax = prefs[Keys.VOLUME_MAPPING_MAX] ?: 100,
+                smoothingFactor = prefs[Keys.SMOOTHING_FACTOR] ?: 0.3f,
+                noiseThreshold = prefs[Keys.NOISE_THRESHOLD] ?: 5,
+                maxVolumeStep = prefs[Keys.MAX_VOLUME_STEP] ?: 5,
+                cooldownMs = prefs[Keys.COOLDOWN_MS] ?: 2000L,
+                maxAdjustmentsPerSecond = prefs[Keys.MAX_ADJUSTMENTS_PER_SECOND] ?: 3
+            )
+        }
+        val key = stringPreferencesKey("profile_${name}")
+        val prefs = context.dataStore.data.first()
+        val encoded = prefs[key] ?: return null
+        return VolumeProfile.decodeFromString(encoded)
+    }
+
+    /** 创建新配置（保存当前设置为新配置） */
+    suspend fun createProfile(name: String) {
+        context.dataStore.edit { prefs ->
+            val profile = VolumeProfile(
+                name = name,
+                minVolumePercent = prefs[Keys.MIN_VOLUME_PERCENT] ?: 10,
+                maxVolumePercent = prefs[Keys.MAX_VOLUME_PERCENT] ?: 90,
+                noiseMappingLow = prefs[Keys.NOISE_MAPPING_LOW] ?: 30,
+                volumeMappingLow = prefs[Keys.VOLUME_MAPPING_LOW] ?: 20,
+                noiseMappingMid = prefs[Keys.NOISE_MAPPING_MID] ?: 50,
+                volumeMappingMid = prefs[Keys.VOLUME_MAPPING_MID] ?: 40,
+                noiseMappingHigh = prefs[Keys.NOISE_MAPPING_HIGH] ?: 70,
+                volumeMappingHigh = prefs[Keys.VOLUME_MAPPING_HIGH] ?: 70,
+                noiseMappingMax = prefs[Keys.NOISE_MAPPING_MAX] ?: 90,
+                volumeMappingMax = prefs[Keys.VOLUME_MAPPING_MAX] ?: 100,
+                smoothingFactor = prefs[Keys.SMOOTHING_FACTOR] ?: 0.3f,
+                noiseThreshold = prefs[Keys.NOISE_THRESHOLD] ?: 5,
+                maxVolumeStep = prefs[Keys.MAX_VOLUME_STEP] ?: 5,
+                cooldownMs = prefs[Keys.COOLDOWN_MS] ?: 2000L,
+                maxAdjustmentsPerSecond = prefs[Keys.MAX_ADJUSTMENTS_PER_SECOND] ?: 3
+            )
+            val key = stringPreferencesKey("profile_${name}")
+            prefs[key] = profile.encodeToString()
+
+            val existing = prefs[Keys.PROFILE_NAMES] ?: ""
+            val names = if (existing.isBlank()) name else "${existing},${name}"
+            prefs[Keys.PROFILE_NAMES] = names
+        }
+    }
+
+    /** 删除配置 */
+    suspend fun deleteProfile(name: String) {
+        if (name == "默认") return
+        context.dataStore.edit { prefs ->
+            val key = stringPreferencesKey("profile_${name}")
+            prefs.remove(key)
+
+            val existing = prefs[Keys.PROFILE_NAMES] ?: ""
+            val names = existing.split(",").filter { it.isNotBlank() && it != name }.joinToString(",")
+            prefs[Keys.PROFILE_NAMES] = names
+
+            if (prefs[Keys.CURRENT_PROFILE] == name) {
+                prefs[Keys.CURRENT_PROFILE] = "默认"
+            }
+        }
+    }
+
+    /** 重命名配置 */
+    suspend fun renameProfile(oldName: String, newName: String) {
+        if (oldName == "默认") return
+        context.dataStore.edit { prefs ->
+            val oldKey = stringPreferencesKey("profile_${oldName}")
+            val encoded = prefs[oldKey] ?: return@edit
+            prefs.remove(oldKey)
+
+            val newKey = stringPreferencesKey("profile_${newName}")
+            val profile = VolumeProfile.decodeFromString(encoded)
+            if (profile != null) {
+                prefs[newKey] = profile.copy(name = newName).encodeToString()
+            }
+
+            val existing = prefs[Keys.PROFILE_NAMES] ?: ""
+            val names = existing.split(",").map { if (it == oldName) newName else it }.joinToString(",")
+            prefs[Keys.PROFILE_NAMES] = names
+
+            if (prefs[Keys.CURRENT_PROFILE] == oldName) {
+                prefs[Keys.CURRENT_PROFILE] = newName
+            }
+        }
+    }
+
+    /** 切换到指定配置（将配置参数应用到主设置） */
+    suspend fun switchProfile(name: String) {
+        val profile = getProfileByName(name) ?: return
+        context.dataStore.edit { prefs ->
+            prefs[Keys.CURRENT_PROFILE] = name
+            prefs[Keys.MIN_VOLUME_PERCENT] = profile.minVolumePercent
+            prefs[Keys.MAX_VOLUME_PERCENT] = profile.maxVolumePercent
+            prefs[Keys.NOISE_MAPPING_LOW] = profile.noiseMappingLow
+            prefs[Keys.VOLUME_MAPPING_LOW] = profile.volumeMappingLow
+            prefs[Keys.NOISE_MAPPING_MID] = profile.noiseMappingMid
+            prefs[Keys.VOLUME_MAPPING_MID] = profile.volumeMappingMid
+            prefs[Keys.NOISE_MAPPING_HIGH] = profile.noiseMappingHigh
+            prefs[Keys.VOLUME_MAPPING_HIGH] = profile.volumeMappingHigh
+            prefs[Keys.NOISE_MAPPING_MAX] = profile.noiseMappingMax
+            prefs[Keys.VOLUME_MAPPING_MAX] = profile.volumeMappingMax
+            prefs[Keys.SMOOTHING_FACTOR] = profile.smoothingFactor
+            prefs[Keys.NOISE_THRESHOLD] = profile.noiseThreshold
+            prefs[Keys.MAX_VOLUME_STEP] = profile.maxVolumeStep
+            prefs[Keys.COOLDOWN_MS] = profile.cooldownMs
+            prefs[Keys.MAX_ADJUSTMENTS_PER_SECOND] = profile.maxAdjustmentsPerSecond
+        }
     }
 }

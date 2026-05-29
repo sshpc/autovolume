@@ -28,6 +28,7 @@ import com.autovolume.service.AutoVolumeService
 import com.autovolume.ui.MainViewModel
 import com.autovolume.ui.screens.AdvancedScreen
 import com.autovolume.ui.screens.HomeScreen
+import com.autovolume.ui.screens.ProfileScreen
 import com.autovolume.ui.screens.SettingsScreen
 import com.autovolume.ui.theme.AutoVolumeTheme
 import com.autovolume.ui.components.Warning
@@ -35,13 +36,6 @@ import com.autovolume.util.PermissionHelper
 
 /**
  * 主 Activity（单 Activity 架构）
- *
- * 使用 Jetpack Compose Navigation 管理页面导航。
- * 所有页面（Home / Settings / Advanced）通过 NavController 切换。
- *
- * 权限处理：
- * 使用 ActivityResultContracts.RequestMultiplePermissions 申请所有必要权限。
- * 包含厂商后台保活引导对话框。
  */
 class MainActivity : ComponentActivity() {
 
@@ -60,12 +54,16 @@ class MainActivity : ComponentActivity() {
         requestRequiredPermissions()
 
         setContent {
-            AutoVolumeTheme {
+            val viewModel: MainViewModel = viewModel()
+            val themeMode by viewModel.themeMode.collectAsState()
+
+            AutoVolumeTheme(themeMode = themeMode) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
                     AutoVolumeAppContent(
+                        viewModel = viewModel,
                         onRequestPermissions = { requestRequiredPermissions() },
                         onRequestBatteryOptimization = {
                             PermissionHelper.requestIgnoreBatteryOptimizations(this)
@@ -92,24 +90,18 @@ class MainActivity : ComponentActivity() {
 
 /**
  * Compose 应用入口
- *
- * 设置 NavHost 和三个页面路由。
- * 包含权限状态管理和厂商警告对话框。
- *
- * 所有实时数据（dB、音量、耳机状态）来自 ViewModel，
- * ViewModel 通过 Service companion object StateFlow 获取。
  */
 @Composable
 fun AutoVolumeAppContent(
+    viewModel: MainViewModel,
     onRequestPermissions: () -> Unit,
     onRequestBatteryOptimization: () -> Unit,
     onOpenAppSettings: () -> Unit
 ) {
     val navController = rememberNavController()
-    val viewModel: MainViewModel = viewModel()
     val context = LocalContext.current
 
-    // 从 ViewModel 获取所有状态（ViewModel 从 Service companion object 同步）
+    // 从 ViewModel 获取所有状态
     val settings by viewModel.settings.collectAsState()
     val isServiceRunning by viewModel.isServiceRunning.collectAsState()
     val currentDb by viewModel.currentDb.collectAsState()
@@ -119,6 +111,9 @@ fun AutoVolumeAppContent(
     val headsetConnected by viewModel.headsetConnected.collectAsState()
     val headsetType by viewModel.headsetType.collectAsState()
     val manufacturerWarning by viewModel.manufacturerWarning.collectAsState()
+    val backgroundTipShown by viewModel.backgroundTipShown.collectAsState()
+    val profileNames by viewModel.profileNames.collectAsState()
+    val currentProfileName by viewModel.currentProfileName.collectAsState()
 
     // 权限状态
     val hasAudioPermission = remember {
@@ -140,13 +135,15 @@ fun AutoVolumeAppContent(
     // 厂商警告对话框
     var showManufacturerDialog by remember { mutableStateOf(false) }
 
-    // 首次启动检查厂商警告
+    // 首次启动检查厂商警告（只在未展示过时弹出）
     LaunchedEffect(Unit) {
-        viewModel.checkManufacturerWarning()
+        if (!backgroundTipShown) {
+            viewModel.checkManufacturerWarning()
+        }
     }
 
     LaunchedEffect(manufacturerWarning) {
-        if (manufacturerWarning != null) {
+        if (manufacturerWarning != null && !backgroundTipShown) {
             showManufacturerDialog = true
         }
     }
@@ -166,6 +163,8 @@ fun AutoVolumeAppContent(
                 rawMappedVolume = rawMappedVolume,
                 headsetConnected = headsetConnected,
                 headsetType = headsetType,
+                profileNames = profileNames,
+                currentProfileName = currentProfileName,
                 onToggleService = {
                     if (!hasAudioPermission.value) {
                         onRequestPermissions()
@@ -178,7 +177,16 @@ fun AutoVolumeAppContent(
                 onMinVolumeChange = { viewModel.updateMinVolume(it) },
                 onMaxVolumeChange = { viewModel.updateMaxVolume(it) },
                 onNavigateToSettings = { navController.navigate("settings") },
-                onNavigateToAdvanced = { navController.navigate("advanced") }
+                onNavigateToProfile = { navController.navigate("profile") },
+                onNavigateToAdvanced = { navController.navigate("advanced") },
+                onProfileSwitch = { viewModel.switchProfile(it) },
+                onOpenAppSettings = {
+                    val missingPerms = viewModel.getMissingPermissions()
+                    if (missingPerms.isNotEmpty()) {
+                        viewModel.openAppSettings()
+                    }
+                },
+                missingPermissions = viewModel.getMissingPermissions()
             )
         }
 
@@ -186,6 +194,7 @@ fun AutoVolumeAppContent(
         composable("settings") {
             SettingsScreen(
                 settings = settings,
+                themeMode = viewModel.themeMode.collectAsState().value,
                 onBack = { navController.popBackStack() },
                 onDetectionIntervalChange = { viewModel.updateDetectionInterval(it) },
                 onSmoothingFactorChange = { viewModel.updateSmoothingFactor(it) },
@@ -202,7 +211,22 @@ fun AutoVolumeAppContent(
                 onNoiseMappingChange = { n1, v1, n2, v2, n3, v3, n4, v4 ->
                     viewModel.updateNoiseMapping(n1, v1, n2, v2, n3, v3, n4, v4)
                 },
-                onResetDefaults = { viewModel.resetToDefaults() }
+                onResetDefaults = { viewModel.resetToDefaults() },
+                onThemeModeChange = { viewModel.updateThemeMode(it) },
+                onNavigateToAdvanced = { navController.navigate("advanced") }
+            )
+        }
+
+        // ===== 配置管理页面 =====
+        composable("profile") {
+            ProfileScreen(
+                profileNames = profileNames,
+                currentProfileName = currentProfileName,
+                onBack = { navController.popBackStack() },
+                onCreateProfile = { viewModel.createProfile(it) },
+                onDeleteProfile = { viewModel.deleteProfile(it) },
+                onRenameProfile = { oldName, newName -> viewModel.renameProfile(oldName, newName) },
+                onSwitchProfile = { viewModel.switchProfile(it) }
             )
         }
 
@@ -222,10 +246,13 @@ fun AutoVolumeAppContent(
         }
     }
 
-    // ===== 厂商后台保活警告对话框 =====
+    // ===== 厂商后台保活警告对话框（只在首次显示） =====
     if (showManufacturerDialog && manufacturerWarning != null) {
         AlertDialog(
-            onDismissRequest = { showManufacturerDialog = false },
+            onDismissRequest = {
+                showManufacturerDialog = false
+                viewModel.markBackgroundTipShown()
+            },
             icon = { Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error) },
             title = { Text("后台运行提示") },
             text = {
@@ -242,13 +269,17 @@ fun AutoVolumeAppContent(
             confirmButton = {
                 TextButton(onClick = {
                     showManufacturerDialog = false
+                    viewModel.markBackgroundTipShown()
                     onRequestBatteryOptimization()
                 }) {
                     Text("去设置")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showManufacturerDialog = false }) {
+                TextButton(onClick = {
+                    showManufacturerDialog = false
+                    viewModel.markBackgroundTipShown()
+                }) {
                     Text("知道了")
                 }
             }

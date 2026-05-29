@@ -6,6 +6,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import com.autovolume.model.ThemeMode
 
 // ==================== 颜色定义 ====================
 
@@ -75,14 +76,26 @@ private val DarkColorScheme = darkColorScheme(
     outline = Color(0xFF938F99)
 )
 
+/**
+ * AutoVolume 主题
+ *
+ * @param themeMode 主题模式（浅色/深色/跟随系统）
+ * @param content 内容
+ */
 @Composable
 fun AutoVolumeTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = true, // Android 12+ 动态取色
+    themeMode: ThemeMode = ThemeMode.SYSTEM,
     content: @Composable () -> Unit
 ) {
+    val darkTheme = when (themeMode) {
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+        ThemeMode.SYSTEM -> isSystemInDarkTheme()
+    }
+
+    val dynamicColor = true // Android 12+ 动态取色
+
     val colorScheme = when {
-        // Android 12+ 支持动态取色（Material You）
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context)
