@@ -10,14 +10,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
@@ -87,8 +83,6 @@ fun AutoVolumeAppContent(
     val adjustmentHistory by viewModel.adjustmentHistory.collectAsState()
     val headsetConnected by viewModel.headsetConnected.collectAsState()
     val headsetType by viewModel.headsetType.collectAsState()
-    val manufacturerWarning by viewModel.manufacturerWarning.collectAsState()
-    val backgroundTipShown by viewModel.backgroundTipShown.collectAsState()
     val profileNames by viewModel.profileNames.collectAsState()
     val currentProfileName by viewModel.currentProfileName.collectAsState()
 
@@ -105,25 +99,6 @@ fun AutoVolumeAppContent(
             ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
         }.collect { result ->
             hasAudioPermission.value = result == PackageManager.PERMISSION_GRANTED
-        }
-    }
-
-    // 后台运行提示：使用 process 级标志防止 Activity 重建时重复弹出
-    val hasCheckedInThisProcess = remember { mutableStateOf(false) }
-
-    LaunchedEffect(backgroundTipShown) {
-        // 仅当 DataStore 加载完成（backgroundTipShown 有值）且本进程未检查过时
-        if (!backgroundTipShown && !hasCheckedInThisProcess.value) {
-            hasCheckedInThisProcess.value = true
-            viewModel.checkManufacturerWarning()
-        }
-    }
-
-    val showManufacturerDialog = remember { mutableStateOf(false) }
-
-    LaunchedEffect(manufacturerWarning) {
-        if (manufacturerWarning != null && !backgroundTipShown && hasCheckedInThisProcess.value) {
-            showManufacturerDialog.value = true
         }
     }
 
@@ -212,41 +187,5 @@ fun AutoVolumeAppContent(
                 onRequestBatteryOptimization = onRequestBatteryOptimization
             )
         }
-    }
-
-    // 后台运行提示对话框（仅首次安装后首次启动显示）
-    if (showManufacturerDialog.value && manufacturerWarning != null) {
-        AlertDialog(
-            onDismissRequest = {
-                showManufacturerDialog.value = false
-                viewModel.markBackgroundTipShown()
-            },
-            icon = { Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error) },
-            title = { Text("后台运行提示") },
-            text = {
-                Column {
-                    Text(manufacturerWarning!!)
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        "如果 AutoVolume 在后台被系统杀死，请按上述步骤设置。",
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    showManufacturerDialog.value = false
-                    viewModel.markBackgroundTipShown()
-                    onRequestBatteryOptimization()
-                }) { Text("去设置") }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    showManufacturerDialog.value = false
-                    viewModel.markBackgroundTipShown()
-                }) { Text("知道了") }
-            }
-        )
     }
 }

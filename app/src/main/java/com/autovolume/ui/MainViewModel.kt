@@ -64,11 +64,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _showPermissionDialog = MutableStateFlow(false)
     val showPermissionDialog: StateFlow<Boolean> = _showPermissionDialog.asStateFlow()
 
-    private val _manufacturerWarning = MutableStateFlow<String?>(null)
-    val manufacturerWarning: StateFlow<String?> = _manufacturerWarning.asStateFlow()
-
-    // ==================== 后台运行提示 ====================
-
     val backgroundTipShown: StateFlow<Boolean> = settingsDataStore.backgroundTipShownFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
@@ -239,18 +234,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun showPermissionDialog(show: Boolean) {
         _showPermissionDialog.value = show
     }
-
-    fun checkManufacturerWarning() {
-        _manufacturerWarning.value = PermissionHelper.getManufacturerWarning()
-    }
-
-    // ==================== 后台运行提示 ====================
-
-    fun markBackgroundTipShown() {
-        viewModelScope.launch { settingsDataStore.updateBackgroundTipShown(true) }
-    }
-
-    // ==================== 主题 ====================
 
     fun updateThemeMode(mode: ThemeMode) {
         viewModelScope.launch { settingsDataStore.updateThemeMode(mode) }
