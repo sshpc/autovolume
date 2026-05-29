@@ -48,7 +48,8 @@ fun SettingsScreen(
     onNoiseMappingChange: (Int, Int, Int, Int, Int, Int, Int, Int) -> Unit,
     onResetDefaults: () -> Unit,
     onThemeModeChange: (ThemeMode) -> Unit,
-    onNavigateToAdvanced: () -> Unit
+    onNavigateToAdvanced: () -> Unit,
+    onRequestBatteryOptimization: () -> Unit
 ) {
     val context = LocalContext.current
 
@@ -178,6 +179,33 @@ fun SettingsScreen(
                 Text("高级与调试")
             }
 
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // ===== 后台运行优化 =====
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("后台运行优化", fontWeight = FontWeight.Medium)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "如果应用在后台被系统杀死，请将 AutoVolume 加入电池优化白名单。",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = onRequestBatteryOptimization,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("电池优化设置")
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(24.dp))
 
             // ===== 重置 =====
@@ -234,7 +262,7 @@ private fun AboutCard(context: Context) {
 
             // 版本
             Text(
-                "v1.0.0",
+                "v0.2",
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

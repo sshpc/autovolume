@@ -16,7 +16,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -24,33 +23,22 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.autovolume.service.AutoVolumeService
 import com.autovolume.ui.MainViewModel
-import com.autovolume.ui.screens.AdvancedScreen
-import com.autovolume.ui.screens.HomeScreen
-import com.autovolume.ui.screens.ProfileScreen
-import com.autovolume.ui.screens.SettingsScreen
+import com.autovolume.ui.screens.*
 import com.autovolume.ui.theme.AutoVolumeTheme
-import com.autovolume.ui.components.Warning
 import com.autovolume.util.PermissionHelper
 
-/**
- * 主 Activity（单 Activity 架构）
- */
 class MainActivity : ComponentActivity() {
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val allGranted = permissions.values.all { it }
-        if (!allGranted) {
-            // 权限被拒绝
-        }
+        if (!allGranted) { }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         requestRequiredPermissions()
 
         setContent {
@@ -67,12 +55,6 @@ class MainActivity : ComponentActivity() {
                         onRequestPermissions = { requestRequiredPermissions() },
                         onRequestBatteryOptimization = {
                             PermissionHelper.requestIgnoreBatteryOptimizations(this)
-                        },
-                        onOpenAppSettings = {
-                            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                data = Uri.fromParts("package", packageName, null)
-                            }
-                            startActivity(intent)
                         }
                     )
                 }
@@ -88,20 +70,15 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-/**
- * Compose 应用入口
- */
 @Composable
 fun AutoVolumeAppContent(
     viewModel: MainViewModel,
     onRequestPermissions: () -> Unit,
-    onRequestBatteryOptimization: () -> Unit,
-    onOpenAppSettings: () -> Unit
+    onRequestBatteryOptimization: () -> Unit
 ) {
     val navController = rememberNavController()
     val context = LocalContext.current
 
-    // 从 ViewModel 获取所有状态
     val settings by viewModel.settings.collectAsState()
     val isServiceRunning by viewModel.isServiceRunning.collectAsState()
     val currentDb by viewModel.currentDb.collectAsState()
@@ -115,7 +92,7 @@ fun AutoVolumeAppContent(
     val profileNames by viewModel.profileNames.collectAsState()
     val currentProfileName by viewModel.currentProfileName.collectAsState()
 
-    // 权限状态
+    // 麦克风权限状态
     val hasAudioPermission = remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
@@ -123,7 +100,6 @@ fun AutoVolumeAppContent(
         )
     }
 
-    // 监听权限变化
     LaunchedEffect(Unit) {
         snapshotFlow {
             ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
@@ -132,28 +108,26 @@ fun AutoVolumeAppContent(
         }
     }
 
-    // 厂商警告对话框
-    var showManufacturerDialog by remember { mutableStateOf(false) }
+    // 后台运行提示：使用 process 级标志防止 Activity 重建时重复弹出
+    val hasCheckedInThisProcess = remember { mutableStateOf(false) }
 
-    // 首次启动检查厂商警告（只在未展示过时弹出）
-    LaunchedEffect(Unit) {
-        if (!backgroundTipShown) {
+    LaunchedEffect(backgroundTipShown) {
+        // 仅当 DataStore 加载完成（backgroundTipShown 有值）且本进程未检查过时
+        if (!backgroundTipShown && !hasCheckedInThisProcess.value) {
+            hasCheckedInThisProcess.value = true
             viewModel.checkManufacturerWarning()
         }
     }
 
+    val showManufacturerDialog = remember { mutableStateOf(false) }
+
     LaunchedEffect(manufacturerWarning) {
-        if (manufacturerWarning != null && !backgroundTipShown) {
-            showManufacturerDialog = true
+        if (manufacturerWarning != null && !backgroundTipShown && hasCheckedInThisProcess.value) {
+            showManufacturerDialog.value = true
         }
     }
 
-    // 主导航
-    NavHost(
-        navController = navController,
-        startDestination = "home"
-    ) {
-        // ===== 主页面 =====
+    NavHost(navController = navController, startDestination = "home") {
         composable("home") {
             HomeScreen(
                 settings = settings,
@@ -166,11 +140,8 @@ fun AutoVolumeAppContent(
                 profileNames = profileNames,
                 currentProfileName = currentProfileName,
                 onToggleService = {
-                    if (!hasAudioPermission.value) {
-                        onRequestPermissions()
-                    } else {
-                        viewModel.toggleService()
-                    }
+                    if (!hasAudioPermission.value) onRequestPermissions()
+                    else viewModel.toggleService()
                 },
                 onToggleEnabled = { viewModel.updateIsEnabled(it) },
                 onRunModeChange = { viewModel.updateRunMode(it) },
@@ -178,19 +149,12 @@ fun AutoVolumeAppContent(
                 onMaxVolumeChange = { viewModel.updateMaxVolume(it) },
                 onNavigateToSettings = { navController.navigate("settings") },
                 onNavigateToProfile = { navController.navigate("profile") },
-                onNavigateToAdvanced = { navController.navigate("advanced") },
                 onProfileSwitch = { viewModel.switchProfile(it) },
-                onOpenAppSettings = {
-                    val missingPerms = viewModel.getMissingPermissions()
-                    if (missingPerms.isNotEmpty()) {
-                        viewModel.openAppSettings()
-                    }
-                },
+                onOpenAppSettings = { viewModel.openAppSettings() },
                 missingPermissions = viewModel.getMissingPermissions()
             )
         }
 
-        // ===== 设置页面 =====
         composable("settings") {
             SettingsScreen(
                 settings = settings,
@@ -213,11 +177,11 @@ fun AutoVolumeAppContent(
                 },
                 onResetDefaults = { viewModel.resetToDefaults() },
                 onThemeModeChange = { viewModel.updateThemeMode(it) },
-                onNavigateToAdvanced = { navController.navigate("advanced") }
+                onNavigateToAdvanced = { navController.navigate("advanced") },
+                onRequestBatteryOptimization = onRequestBatteryOptimization
             )
         }
 
-        // ===== 配置管理页面 =====
         composable("profile") {
             ProfileScreen(
                 profileNames = profileNames,
@@ -225,12 +189,15 @@ fun AutoVolumeAppContent(
                 onBack = { navController.popBackStack() },
                 onCreateProfile = { viewModel.createProfile(it) },
                 onDeleteProfile = { viewModel.deleteProfile(it) },
-                onRenameProfile = { oldName, newName -> viewModel.renameProfile(oldName, newName) },
-                onSwitchProfile = { viewModel.switchProfile(it) }
+                onRenameProfile = { old, new -> viewModel.renameProfile(old, new) },
+                onSwitchProfile = { viewModel.switchProfile(it) },
+                onExportProfile = { name, onResult ->
+                    viewModel.exportProfileAndGetJson(name, onResult)
+                },
+                onImportProfile = { json, onResult -> viewModel.importProfile(json, onResult) }
             )
         }
 
-        // ===== 高级调试页面 =====
         composable("advanced") {
             AdvancedScreen(
                 settings = settings,
@@ -241,16 +208,17 @@ fun AutoVolumeAppContent(
                 onBack = { navController.popBackStack() },
                 onSampleRateChange = { viewModel.updateSampleRate(it) },
                 onShowDebugChange = { viewModel.updateShowDebugInfo(it) },
-                onResetDefaults = { viewModel.resetToDefaults() }
+                onResetDefaults = { viewModel.resetToDefaults() },
+                onRequestBatteryOptimization = onRequestBatteryOptimization
             )
         }
     }
 
-    // ===== 厂商后台保活警告对话框（只在首次显示） =====
-    if (showManufacturerDialog && manufacturerWarning != null) {
+    // 后台运行提示对话框（仅首次安装后首次启动显示）
+    if (showManufacturerDialog.value && manufacturerWarning != null) {
         AlertDialog(
             onDismissRequest = {
-                showManufacturerDialog = false
+                showManufacturerDialog.value = false
                 viewModel.markBackgroundTipShown()
             },
             icon = { Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error) },
@@ -268,20 +236,16 @@ fun AutoVolumeAppContent(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    showManufacturerDialog = false
+                    showManufacturerDialog.value = false
                     viewModel.markBackgroundTipShown()
                     onRequestBatteryOptimization()
-                }) {
-                    Text("去设置")
-                }
+                }) { Text("去设置") }
             },
             dismissButton = {
                 TextButton(onClick = {
-                    showManufacturerDialog = false
+                    showManufacturerDialog.value = false
                     viewModel.markBackgroundTipShown()
-                }) {
-                    Text("知道了")
-                }
+                }) { Text("知道了") }
             }
         )
     }

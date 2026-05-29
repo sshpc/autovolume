@@ -49,7 +49,6 @@ fun HomeScreen(
     onMaxVolumeChange: (Int) -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToProfile: () -> Unit,
-    onNavigateToAdvanced: () -> Unit,
     onProfileSwitch: (String) -> Unit,
     onOpenAppSettings: () -> Unit,
     missingPermissions: List<PermissionItem>

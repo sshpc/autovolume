@@ -40,7 +40,8 @@ fun AdvancedScreen(
     onBack: () -> Unit,
     onSampleRateChange: (Int) -> Unit,
     onShowDebugChange: (Boolean) -> Unit,
-    onResetDefaults: () -> Unit
+    onResetDefaults: () -> Unit,
+    onRequestBatteryOptimization: () -> Unit
 ) {
     Scaffold(
         topBar = {
@@ -136,6 +137,57 @@ fun AdvancedScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Switch(checked = settings.showDebugInfo, onCheckedChange = onShowDebugChange)
+                    }
+                }
+            }
+
+            // ===== 后台运行优化 =====
+            item {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("后台运行优化", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "为确保 AutoVolume 在后台正常运行，建议：",
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text("1. 将 AutoVolume 加入电池优化白名单", fontSize = 13.sp)
+                        Text("2. 在系统设置中允许自启动", fontSize = 13.sp)
+                        Text("3. 关闭对 AutoVolume 的后台限制", fontSize = 13.sp)
+                        Spacer(Modifier.height(12.dp))
+                        OutlinedButton(
+                            onClick = onRequestBatteryOptimization,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("电池优化设置")
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        val manufacturer = android.os.Build.MANUFACTURER
+                        val warning = com.autovolume.util.PermissionHelper.getManufacturerWarning()
+                        if (warning != null) {
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.errorContainer
+                                )
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text(
+                                        "$manufacturer 设备提示",
+                                        fontWeight = FontWeight.Medium,
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        warning,
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }

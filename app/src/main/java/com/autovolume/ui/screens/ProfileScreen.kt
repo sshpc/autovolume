@@ -1,5 +1,10 @@
 package com.autovolume.ui.screens
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -10,17 +15,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/**
- * 配置管理页面
- *
- * 支持创建、删除、重命名、切换配置。
- * 例如：通勤模式、夜间模式、地铁模式、室内模式。
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
@@ -30,11 +30,46 @@ fun ProfileScreen(
     onCreateProfile: (String) -> Unit,
     onDeleteProfile: (String) -> Unit,
     onRenameProfile: (String, String) -> Unit,
-    onSwitchProfile: (String) -> Unit
+    onSwitchProfile: (String) -> Unit,
+    onExportProfile: (String, (String?) -> Unit) -> Unit,
+    onImportProfile: (String, (Boolean) -> Unit) -> Unit
 ) {
+    val context = LocalContext.current
     var showCreateDialog by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf<String?>(null) }
     var showDeleteDialog by remember { mutableStateOf<String?>(null) }
+    var exportResult by remember { mutableStateOf<String?>(null) }
+    var importResult by remember { mutableStateOf<String?>(null) }
+
+    // SAF 文件选择器：导出
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        uri?.let { fileUri ->
+            exportResult?.let { json ->
+                context.contentResolver.openOutputStream(fileUri)?.use { stream ->
+                    stream.write(json.toByteArray())
+                }
+                exportResult = null
+            }
+        }
+    }
+
+    // SAF 文件选择器：导入
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let { fileUri ->
+            val json = context.contentResolver.openInputStream(fileUri)?.use { stream ->
+                stream.bufferedReader().readText()
+            }
+            if (json != null) {
+                onImportProfile(json) { success ->
+                    importResult = if (success) "导入成功" else "导入失败：配置格式错误"
+                }
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -46,6 +81,13 @@ fun ProfileScreen(
                     }
                 },
                 actions = {
+                    // 导入按钮
+                    IconButton(onClick = {
+                        importLauncher.launch(arrayOf("application/json"))
+                    }) {
+                        Icon(Icons.Default.Share, "导入配置")
+                    }
+                    // 新建按钮
                     IconButton(onClick = { showCreateDialog = true }) {
                         Icon(Icons.Default.Add, "新建配置")
                     }
@@ -60,7 +102,7 @@ fun ProfileScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // ===== 使用说明 =====
+            // 说明
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -69,15 +111,11 @@ fun ProfileScreen(
                     )
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            "配置说明",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
+                        Text("配置说明", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         Spacer(Modifier.height(6.dp))
                         Text(
                             "每个配置独立保存灵敏度、音量范围、映射曲线、响应速度等参数。" +
-                                    "创建配置时会保存当前设置。",
+                                    "创建配置时会保存当前设置。支持导出为 JSON 文件。",
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             lineHeight = 18.sp
@@ -86,31 +124,48 @@ fun ProfileScreen(
                 }
             }
 
-            // ===== 默认配置（不可删除） =====
+            // 默认配置（不可删除，不可重命名）
             item {
                 ProfileCard(
                     name = "默认",
                     isCurrent = currentProfileName == "默认",
                     canDelete = false,
+                    canRename = false,
                     onSwitch = { onSwitchProfile("默认") },
                     onRename = null,
-                    onDelete = null
+                    onDelete = null,
+                    onExport = {
+                        onExportProfile("默认") { json ->
+                            if (json != null) {
+                                exportResult = json
+                                exportLauncher.launch("autovolume_default.json")
+                            }
+                        }
+                    }
                 )
             }
 
-            // ===== 用户自定义配置 =====
+            // 用户自定义配置
             items(profileNames.filter { it != "默认" }) { name ->
                 ProfileCard(
                     name = name,
                     isCurrent = currentProfileName == name,
                     canDelete = true,
+                    canRename = true,
                     onSwitch = { onSwitchProfile(name) },
                     onRename = { showRenameDialog = name },
-                    onDelete = { showDeleteDialog = name }
+                    onDelete = { showDeleteDialog = name },
+                    onExport = {
+                        onExportProfile(name) { json ->
+                            if (json != null) {
+                                exportResult = json
+                                exportLauncher.launch("autovolume_${name}.json")
+                            }
+                        }
+                    }
                 )
             }
 
-            // ===== 空状态提示 =====
             if (profileNames.none { it != "默认" }) {
                 item {
                     Text(
@@ -126,33 +181,36 @@ fun ProfileScreen(
         }
     }
 
-    // ===== 新建配置对话框 =====
+    // 导入结果提示
+    importResult?.let { msg ->
+        LaunchedEffect(msg) {
+            kotlinx.coroutines.delay(3000)
+            importResult = null
+        }
+        Snackbar(modifier = Modifier.padding(16.dp)) { Text(msg) }
+    }
+
+    // 新建配置对话框
     if (showCreateDialog) {
         ProfileNameDialog(
             title = "新建配置",
             initialName = "",
-            onConfirm = { name ->
-                onCreateProfile(name)
-                showCreateDialog = false
-            },
+            onConfirm = { name -> onCreateProfile(name); showCreateDialog = false },
             onDismiss = { showCreateDialog = false }
         )
     }
 
-    // ===== 重命名对话框 =====
+    // 重命名对话框
     showRenameDialog?.let { oldName ->
         ProfileNameDialog(
             title = "重命名配置",
             initialName = oldName,
-            onConfirm = { newName ->
-                onRenameProfile(oldName, newName)
-                showRenameDialog = null
-            },
+            onConfirm = { newName -> onRenameProfile(oldName, newName); showRenameDialog = null },
             onDismiss = { showRenameDialog = null }
         )
     }
 
-    // ===== 删除确认对话框 =====
+    // 删除确认对话框
     showDeleteDialog?.let { name ->
         AlertDialog(
             onDismissRequest = { showDeleteDialog = null },
@@ -160,37 +218,27 @@ fun ProfileScreen(
             text = { Text("确定要删除配置「$name」吗？此操作不可撤销。") },
             confirmButton = {
                 TextButton(
-                    onClick = {
-                        onDeleteProfile(name)
-                        showDeleteDialog = null
-                    },
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    )
-                ) {
-                    Text("删除")
-                }
+                    onClick = { onDeleteProfile(name); showDeleteDialog = null },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) { Text("删除") }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteDialog = null }) {
-                    Text("取消")
-                }
+                TextButton(onClick = { showDeleteDialog = null }) { Text("取消") }
             }
         )
     }
 }
 
-/**
- * 配置卡片组件
- */
 @Composable
 private fun ProfileCard(
     name: String,
     isCurrent: Boolean,
     canDelete: Boolean,
+    canRename: Boolean,
     onSwitch: () -> Unit,
     onRename: (() -> Unit)?,
-    onDelete: (() -> Unit)?
+    onDelete: (() -> Unit)?,
+    onExport: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -214,8 +262,7 @@ private fun ProfileCard(
             ) {
                 if (isCurrent) {
                     Icon(
-                        Icons.Default.CheckCircle,
-                        null,
+                        Icons.Default.CheckCircle, null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(20.dp)
                     )
@@ -229,34 +276,27 @@ private fun ProfileCard(
                         overflow = TextOverflow.Ellipsis
                     )
                     if (isCurrent) {
-                        Text(
-                            "当前使用中",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                        Text("当前使用中", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
                     }
                 }
             }
 
             Row {
-                if (onRename != null) {
+                // 导出
+                IconButton(onClick = onExport, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Default.Share, "导出", modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (canRename && onRename != null) {
                     IconButton(onClick = onRename, modifier = Modifier.size(36.dp)) {
-                        Icon(
-                            Icons.Default.Edit,
-                            "重命名",
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Icon(Icons.Default.Edit, "重命名", modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
                 if (canDelete && onDelete != null) {
                     IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
-                        Icon(
-                            Icons.Default.Delete,
-                            "删除",
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.error
-                        )
+                        Icon(Icons.Default.Delete, "删除", modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.error)
                     }
                 }
             }
@@ -264,9 +304,6 @@ private fun ProfileCard(
     }
 }
 
-/**
- * 配置名称输入对话框
- */
 @Composable
 private fun ProfileNameDialog(
     title: String,
@@ -283,10 +320,7 @@ private fun ProfileNameDialog(
         text = {
             OutlinedTextField(
                 value = name,
-                onValueChange = {
-                    name = it
-                    isError = it.isBlank() || it == "默认"
-                },
+                onValueChange = { name = it; isError = it.isBlank() || it == "默认" },
                 label = { Text("配置名称") },
                 placeholder = { Text("例如：通勤模式") },
                 isError = isError,
@@ -303,14 +337,10 @@ private fun ProfileNameDialog(
             TextButton(
                 onClick = { onConfirm(name.trim()) },
                 enabled = name.isNotBlank() && name != "默认" && name.trim() == name
-            ) {
-                Text("确定")
-            }
+            ) { Text("确定") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消")
-            }
+            TextButton(onClick = onDismiss) { Text("取消") }
         }
     )
 }

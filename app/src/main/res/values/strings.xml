@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">AutoVolume</string>
+    <string name="app_version">0.2</string>
     <string name="notification_channel_name">自动音量调节</string>
     <string name="notification_channel_desc">显示自动音量调节服务的运行状态</string>
 </resources>

@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -22,11 +23,6 @@ import com.autovolume.util.PermissionHelper
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
-/**
- * 主 ViewModel
- *
- * 管理整个应用的 UI 状态。
- */
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val settingsDataStore = SettingsDataStore(application)
@@ -89,9 +85,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val currentProfileName: StateFlow<String> = settingsDataStore.currentProfileFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "默认")
 
-    // ==================== 权限检测 ====================
+    // ==================== 权限检测（仅首页：麦克风 + 媒体音量控制） ====================
 
-    /** 获取当前缺失的权限列表 */
     fun getMissingPermissions(): List<PermissionItem> {
         val context = getApplication<Application>()
         val missing = mutableListOf<PermissionItem>()
@@ -100,37 +95,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED) {
             missing.add(PermissionItem(
-                name = "麦克风权限",
-                description = "点击授权以启用自动音量调节",
+                name = "未开启麦克风权限",
+                description = "请授权以启用自动音量调节",
                 permission = android.Manifest.permission.RECORD_AUDIO
             ))
         }
 
-        // 通知权限 (Android 13+)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS)
-                != PackageManager.PERMISSION_GRANTED) {
+        // 媒体音量控制能力
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        try {
+            val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            val curVol = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+            if (maxVol == 0) {
                 missing.add(PermissionItem(
-                    name = "通知权限",
-                    description = "点击授权以显示运行状态通知",
-                    permission = android.Manifest.permission.POST_NOTIFICATIONS
+                    name = "无法控制媒体音量",
+                    description = "设备不支持媒体音量调节",
+                    permission = "audio_control"
                 ))
             }
-        }
-
-        // 后台运行权限
-        if (!PermissionHelper.isIgnoringBatteryOptimizations(context)) {
+        } catch (e: Exception) {
             missing.add(PermissionItem(
-                name = "后台运行权限",
-                description = "点击设置以允许后台运行",
-                permission = "battery_optimization"
+                name = "媒体音量控制异常",
+                description = "无法获取媒体音量状态",
+                permission = "audio_control"
             ))
         }
 
         return missing
     }
 
-    /** 打开应用系统设置页面 */
     fun openAppSettings() {
         val context = getApplication<Application>()
         val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
@@ -140,7 +133,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         context.startActivity(intent)
     }
 
-    /** 打开电池优化设置 */
     fun openBatteryOptimization() {
         val context = getApplication<Application>()
         PermissionHelper.requestIgnoreBatteryOptimizations(context)
@@ -157,7 +149,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // ==================== 设置更新方法 ====================
+    // ==================== 设置更新 ====================
 
     fun updateIsEnabled(enabled: Boolean) {
         viewModelScope.launch { settingsDataStore.updateIsEnabled(enabled) }
@@ -281,11 +273,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun switchProfile(name: String) {
         viewModelScope.launch { settingsDataStore.switchProfile(name) }
     }
+
+    /** 获取配置的 JSON 导出字符串 */
+    fun exportProfileAndGetJson(name: String, onResult: (String?) -> Unit) {
+        viewModelScope.launch {
+            val json = settingsDataStore.getProfileByName(name)?.toJson()
+            onResult(json)
+        }
+    }
+
+    /** 导入配置（从 JSON 字符串） */
+    fun importProfile(jsonStr: String, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val result = settingsDataStore.importProfile(jsonStr)
+            onResult(result)
+        }
+    }
 }
 
-/**
- * 权限信息数据类
- */
 data class PermissionItem(
     val name: String,
     val description: String,
