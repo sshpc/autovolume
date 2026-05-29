@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 前景层：音量图标，自适应图标安全区域 54dp 圆 -->
+    <group
+        android:translateX="27"
+        android:translateY="27">
+        <!-- 喇叭 -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M16,22v20h8l12,12V10L24,22h-8z"/>
+        <!-- 音波1 -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:fillAlpha="0.8"
+            android:pathData="M42,27.3c2.4,1.8 4,4.7 4,7.7s-1.6,5.9 -4,7.7"/>
+        <!-- 音波2 -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:fillAlpha="0.6"
+            android:pathData="M48,22c4.2,3.2 7,8.2 7,13s-2.8,9.8 -7,13"/>
+        <!-- 自动调节箭头（循环） -->
+        <path
+            android:fillColor="#4CAF50"
+            android:pathData="M46,16l4,4 -4,4z"/>
+        <path
+            android:fillColor="#4CAF50"
+            android:strokeColor="#4CAF50"
+            android:strokeWidth="2"
+            android:pathData="M50,20 L38,20"/>
+        <path
+            android:fillColor="#4CAF50"
+            android:pathData="M30,48l-4,-4 4,-4z"/>
+        <path
+            android:fillColor="#4CAF50"
+            android:strokeColor="#4CAF50"
+            android:strokeWidth="2"
+            android:pathData="M26,44 L38,44"/>
+    </group>
+</vector>
